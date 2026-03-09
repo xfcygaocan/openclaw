@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { Component, SelectItem, TUI } from "@mariozechner/pi-tui";
 import { resolveSessionAgentId, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { resolveCommandsSystemPromptBundle } from "../auto-reply/reply/commands-system-prompt.js";
@@ -362,7 +364,20 @@ export function createCommandHandlers(context: CommandHandlerContext) {
               contextTokens,
             },
           };
-          chatLog.addSystem(JSON.stringify(contextData, null, 2));
+          const json = JSON.stringify(contextData, null, 2);
+          chatLog.addSystem(json);
+
+          // Persist to project-local agents/main/sessions/
+          try {
+            const sessionsDir = path.join(workspaceDir, "agents", "main", "sessions");
+            fs.mkdirSync(sessionsDir, { recursive: true });
+            const ts = new Date().toISOString().replace(/[:.]/g, "-");
+            const outPath = path.join(sessionsDir, `context-${ts}.json`);
+            fs.writeFileSync(outPath, json, "utf-8");
+            chatLog.addSystem(`Saved to ${outPath}`);
+          } catch (writeErr) {
+            chatLog.addSystem(`Failed to save context file: ${String(writeErr)}`);
+          }
         } catch (err) {
           chatLog.addSystem(`context-tui failed: ${String(err)}`);
         }
