@@ -259,6 +259,15 @@ export class GatewayChatClient {
     return await this.client.request("status");
   }
 
+  async getSessionContext(sessionKey: string) {
+    return await this.client.request<{
+      systemPrompt: string;
+      tools: Array<{ name: string; description?: string; parameters?: unknown }>;
+      messages: unknown[];
+      meta: Record<string, unknown>;
+    }>("sessions.context", { key: sessionKey });
+  }
+
   async listModels(): Promise<GatewayModelChoice[]> {
     const res = await this.client.request<{ models?: GatewayModelChoice[] }>("models.list");
     return Array.isArray(res?.models) ? res.models : [];

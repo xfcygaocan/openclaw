@@ -267,51 +267,17 @@ export function createCommandHandlers(context: CommandHandlerContext) {
         }
         break;
       case "context-tui": {
-        const contextData = {
-          agent: {
-            currentAgentId: state.currentAgentId,
-            defaultAgentId: state.agentDefaultId,
-          },
-          session: {
-            sessionKey: state.currentSessionKey,
-            sessionId: state.currentSessionId,
-            mainKey: state.sessionMainKey,
-            scope: state.sessionScope,
-          },
-          sessionInfo: {
-            model: state.sessionInfo.model ?? null,
-            modelProvider: state.sessionInfo.modelProvider ?? null,
-            thinkingLevel: state.sessionInfo.thinkingLevel ?? null,
-            verboseLevel: state.sessionInfo.verboseLevel ?? null,
-            reasoningLevel: state.sessionInfo.reasoningLevel ?? null,
-            contextTokens: state.sessionInfo.contextTokens ?? null,
-            inputTokens: state.sessionInfo.inputTokens ?? null,
-            outputTokens: state.sessionInfo.outputTokens ?? null,
-            totalTokens: state.sessionInfo.totalTokens ?? null,
-            responseUsage: state.sessionInfo.responseUsage ?? null,
-            displayName: state.sessionInfo.displayName ?? null,
-            updatedAt: state.sessionInfo.updatedAt ?? null,
-          },
-          connection: {
-            isConnected: state.isConnected,
-            connectionStatus: state.connectionStatus,
-            gatewayUrl: client.connection.url,
-          },
-          activity: {
-            activeChatRunId: state.activeChatRunId,
-            activityStatus: state.activityStatus,
-            historyLoaded: state.historyLoaded,
-          },
-          display: {
-            toolsExpanded: state.toolsExpanded,
-            showThinking: state.showThinking,
-          },
-          gateway: {
-            version: client.hello?.server?.version ?? null,
-            protocolVersion: client.hello?.protocol ?? null,
-          },
-        };
-        chatLog.addSystem(JSON.stringify(contextData, null, 2));
+        const sessionKey = state.currentSessionKey;
+        if (!sessionKey) {
+          chatLog.addSystem("No active session.");
+          break;
+        }
+        try {
+          const ctx = await client.getSessionContext(sessionKey);
+          chatLog.addSystem(JSON.stringify(ctx, null, 2));
+        } catch (err) {
+          chatLog.addSystem(`context-tui failed: ${String(err)}`);
+        }
         break;
       }
       case "agent":
