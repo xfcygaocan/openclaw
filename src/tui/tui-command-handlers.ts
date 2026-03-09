@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { Component, SelectItem, TUI } from "@mariozechner/pi-tui";
+import { resolveSessionAgentId, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import { resolveCommandsSystemPromptBundle } from "../auto-reply/reply/commands-system-prompt.js";
+import type { HandleCommandsParams } from "../auto-reply/reply/commands-types.js";
+import type { MsgContext } from "../auto-reply/templating.js";
 import {
   formatThinkingLevels,
   normalizeUsageDisplay,
   resolveResponseUsageMode,
 } from "../auto-reply/thinking.js";
 import type { SessionsPatchResult } from "../gateway/protocol/index.js";
+import {
+  loadSessionEntry,
+  readSessionMessages,
+  resolveSessionModelRef,
+  getSessionDefaults,
+} from "../gateway/session-utils.js";
 import { formatRelativeTimestamp } from "../infra/format-time/format-relative.ts";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { helpText, parseCommand } from "./commands.js";
@@ -273,8 +283,86 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           break;
         }
         try {
-          const ctx = await client.getSessionContext(sessionKey);
-          chatLog.addSystem(JSON.stringify(ctx, null, 2));
+          const { cfg, storePath, entry } = loadSessionEntry(sessionKey);
+          const agentId = resolveSessionAgentId({ sessionKey, config: cfg });
+          const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+          const { provider, model } = resolveSessionModelRef(cfg, entry, agentId);
+          const defaults = getSessionDefaults(cfg);
+          const contextTokens = entry?.contextTokens ?? defaults.contextTokens ?? 128_000;
+
+          const syntheticCtx: MsgContext = { SessionKey: sessionKey };
+          const syntheticParams: HandleCommandsParams = {
+            ctx: syntheticCtx,
+            cfg,
+            command: {
+              surface: "tui",
+              channel: "tui",
+              ownerList: [],
+              senderIsOwner: true,
+              isAuthorizedSender: true,
+              rawBodyNormalized: "",
+              commandBodyNormalized: "",
+            },
+            agentId,
+            directives: {
+              cleaned: "",
+              hasThinkDirective: false,
+              hasVerboseDirective: false,
+              hasReasoningDirective: false,
+              hasElevatedDirective: false,
+              hasExecDirective: false,
+              hasExecOptions: false,
+              invalidExecHost: false,
+              invalidExecSecurity: false,
+              invalidExecAsk: false,
+              invalidExecNode: false,
+              hasStatusDirective: false,
+              hasModelDirective: false,
+              hasQueueDirective: false,
+              queueReset: false,
+              hasQueueOptions: false,
+            },
+            elevated: { enabled: false, allowed: false, failures: [] },
+            sessionEntry: entry,
+            sessionKey,
+            storePath,
+            workspaceDir,
+            defaultGroupActivation: () => "mention",
+            resolvedThinkLevel: (entry as Record<string, unknown> | undefined)?.thinkingLevel as
+              | HandleCommandsParams["resolvedThinkLevel"]
+              | undefined,
+            resolvedVerboseLevel: "off",
+            resolvedReasoningLevel: "off",
+            resolvedElevatedLevel: "off",
+            resolveDefaultThinkingLevel: async () => undefined,
+            provider,
+            model,
+            contextTokens,
+            isGroup: false,
+          };
+
+          const bundle = await resolveCommandsSystemPromptBundle(syntheticParams);
+          const sessionId = entry?.sessionId;
+          const messages = sessionId ? readSessionMessages(sessionId, storePath) : [];
+
+          const contextData = {
+            systemPrompt: bundle.systemPrompt,
+            tools: bundle.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters,
+            })),
+            messages,
+            meta: {
+              model,
+              provider,
+              agentId,
+              sessionKey,
+              thinkingLevel: entry?.thinkingLevel ?? null,
+              contextTokens,
+            },
+          };
+          chatLog.addSystem(JSON.stringify(contextData, null, 2));
         } catch (err) {
           chatLog.addSystem(`context-tui failed: ${String(err)}`);
         }
